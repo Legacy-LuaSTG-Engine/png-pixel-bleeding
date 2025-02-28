@@ -68,3 +68,14 @@ target_include_directories(wil INTERFACE
 target_sources(wil INTERFACE
     wil/natvis/wil.natvis
 )
+
+# DirectXTK
+
+add_library(DirectXTK STATIC)
+target_include_directories(DirectXTK PUBLIC
+        DirectXTK/Inc
+)
+target_sources(DirectXTK PRIVATE
+        DirectXTK/Inc/WICTextureLoader.h
+        DirectXTK/Src/WICTextureLoader.cpp
+)
