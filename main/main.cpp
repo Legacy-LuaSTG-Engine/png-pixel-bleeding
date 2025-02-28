@@ -8,6 +8,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <ranges>
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -21,8 +22,11 @@
 #include <windows.h>
 #include <shobjidl_core.h>
 #include <winrt/base.h>
+#include <wincodec.h>
 #include <dxgi1_6.h>
 #include <d3d11_4.h>
+#include <DirectXMath.h>
+#include <DirectXPackedVector.h>
 #include <wil/resource.h>
 #include <wil/com.h>
 #include <wil/result_macros.h>
@@ -41,6 +45,53 @@ void CleanupDeviceD3D();
 void CreateRenderTarget();
 void CleanupRenderTarget();
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+class Image2D {
+public:
+    [[nodiscard]] uint32_t width() const noexcept {
+        return m_width;
+    }
+
+    [[nodiscard]] uint32_t pitch() const noexcept {
+        return static_cast<uint32_t>(m_width * sizeof(DirectX::PackedVector::XMCOLOR));
+    }
+
+    [[nodiscard]] uint32_t height() const noexcept {
+        return m_height;
+    }
+
+    [[nodiscard]] uint32_t size() const noexcept {
+        return static_cast<uint32_t>(m_pixels.size() * sizeof(DirectX::PackedVector::XMCOLOR));
+    }
+
+    template <typename T>
+    [[nodiscard]] T* buffer() noexcept {
+        return reinterpret_cast<T*>(m_pixels.data());
+    }
+
+    void resize(uint32_t const width, uint32_t const height) {
+        m_width = width;
+        m_height = height;
+        m_pixels.resize(width * height);
+    }
+
+    void fill(DirectX::PackedVector::XMCOLOR const color = {}) {
+        std::ranges::fill(m_pixels, color);
+    }
+
+    [[nodiscard]] DirectX::PackedVector::XMCOLOR const& pixel(uint32_t const x, uint32_t const y) const {
+        return m_pixels.at(y * m_width + x);
+    }
+
+    [[nodiscard]] DirectX::PackedVector::XMCOLOR& pixel(uint32_t const x, uint32_t const y) {
+        return m_pixels.at(y * m_width + x);
+    }
+
+private:
+    std::vector<DirectX::PackedVector::XMCOLOR> m_pixels;
+    uint32_t m_width{};
+    uint32_t m_height{};
+};
 
 class Application {
 public:
@@ -77,6 +128,7 @@ public:
         ImGuiIO& io = ImGui::GetIO();
         io.Fonts->Clear();
 
+        m_font_glyph_ranges_builder.Clear();
         m_font_glyph_ranges_builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
 
         m_font_glyph_ranges_builder.AddText("文件");
@@ -89,11 +141,11 @@ public:
         m_font_glyph_ranges_builder.AddText("演示（Dear ImGui）");
 
         m_font_glyph_ranges_builder.AddText("打开的文件：");
-        auto const open_file_path = winrt::to_string(m_open_file_path);
-        m_font_glyph_ranges_builder.AddText(open_file_path.c_str());
+        m_font_glyph_ranges_builder.AddText(m_open_file_path.c_str());
+        m_font_glyph_ranges_builder.AddText("图像尺寸：");
 
+        m_font_glyph_ranges.clear();
         m_font_glyph_ranges_builder.BuildRanges(&m_font_glyph_ranges);
-
 
         auto const scaling = ImGui_ImplWin32_GetDpiScaleForHwnd(m_win32_window);
         auto const font_size = 16.0f * scaling;
@@ -157,8 +209,9 @@ public:
             PWSTR path{};
             if (SUCCEEDED(THROW_IF_FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))) {
                 m_opened = true;
-                m_open_file_path.assign(path);
+                m_open_file_path.assign(winrt::to_string(path));
                 m_font_glyph_cache_dirty = true;
+                loadImage();
                 CoTaskMemFree(path);
             }
         }
@@ -166,6 +219,127 @@ public:
 
     void closeFileCommand() {
         m_opened = false;
+    }
+
+    void createTextureResources(uint32_t const width, uint32_t const height) {
+        m_image.resize(width, height);
+        m_image.fill();
+
+        D3D11_TEXTURE2D_DESC texture_info{};
+        texture_info.Width = width;
+        texture_info.Height = height;
+        texture_info.MipLevels = 1;
+        texture_info.ArraySize = 1;
+        texture_info.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        texture_info.SampleDesc.Count = 1;
+        texture_info.Usage = D3D11_USAGE_DYNAMIC;
+        texture_info.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        texture_info.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        THROW_IF_FAILED(g_pd3dDevice->CreateTexture2D(
+            &texture_info, nullptr, m_opened_texture.put()
+        ));
+
+        D3D11_SHADER_RESOURCE_VIEW_DESC srv_info{};
+        srv_info.Format = texture_info.Format;
+        srv_info.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        srv_info.Texture2D.MostDetailedMip = 0;
+        srv_info.Texture2D.MipLevels = texture_info.MipLevels;
+        THROW_IF_FAILED(g_pd3dDevice->CreateShaderResourceView(
+            m_opened_texture.get(), &srv_info, m_opened_srv.put()
+        ));
+    }
+
+    void loadImage() {
+        if (!m_wic_factory) {
+            m_wic_factory = wil::CoCreateInstance<IWICImagingFactory>(CLSID_WICImagingFactory);
+        }
+
+        // create decoder
+
+        wil::com_ptr<IWICBitmapDecoder> decoder;
+        auto const file_path = winrt::to_hstring(m_open_file_path);
+        THROW_IF_FAILED(m_wic_factory->CreateDecoderFromFilename(
+            file_path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, decoder.put()
+        ));
+
+        // get first frame
+
+        wil::com_ptr<IWICBitmapFrameDecode> decoder_frame;
+        THROW_IF_FAILED(decoder->GetFrame(0, decoder_frame.put()));
+
+        UINT color_context_count{};
+        THROW_IF_FAILED(decoder_frame->GetColorContexts(
+            0, nullptr, &color_context_count
+        ));
+        std::vector<IWICColorContext*> color_contexts(color_context_count);
+        THROW_IF_FAILED(decoder_frame->GetColorContexts(
+            color_context_count, color_contexts.data(), &color_context_count
+        ));
+        [[maybe_unused]] auto const auto_release_color_contexts = wil::scope_exit([&]() -> void {
+            for (auto const color_context : color_contexts) {
+                if (color_context) {
+                    color_context->Release();
+                }
+            }
+            color_contexts.clear();
+        });
+        for (auto const color_context : color_contexts) {
+            WICColorContextType type{};
+            THROW_IF_FAILED(color_context->GetType(&type));
+            if (type == WICColorContextExifColorSpace) {
+                UINT color_space{};
+                THROW_IF_FAILED(color_context->GetExifColorSpace(&color_space));
+            }
+        }
+
+        // convert
+
+        auto const target_pixel_format{GUID_WICPixelFormat32bppBGRA};
+        WICPixelFormatGUID pixel_format{};
+        THROW_IF_FAILED(decoder_frame->GetPixelFormat(&pixel_format));
+
+        auto decodeFrame = [&](IWICBitmapSource* bitmap) -> void {
+            UINT width{};
+            UINT height{};
+            THROW_IF_FAILED(bitmap->GetSize(&width, &height));
+
+            createTextureResources(width, height);
+
+            THROW_IF_FAILED(bitmap->CopyPixels(
+                nullptr, m_image.pitch(), m_image.size(), m_image.buffer<BYTE>()
+            ));
+
+            D3D11_MAPPED_SUBRESOURCE mapped{};
+            THROW_IF_FAILED(g_pd3dDeviceContext->Map(
+                m_opened_texture.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped
+            ));
+            THROW_IF_FAILED(bitmap->CopyPixels(
+                nullptr, mapped.RowPitch, mapped.RowPitch * height, static_cast<BYTE*>(mapped.pData)
+            ));
+            g_pd3dDeviceContext->Unmap(m_opened_texture.get(), 0);
+        };
+
+        if (pixel_format != target_pixel_format) {
+            wil::com_ptr<IWICFormatConverter> format_converter;
+            THROW_IF_FAILED(m_wic_factory->CreateFormatConverter(format_converter.put()));
+            BOOL can_convert{FALSE};
+            THROW_IF_FAILED(format_converter->CanConvert(pixel_format, target_pixel_format, &can_convert));
+            if (can_convert) {
+                THROW_IF_FAILED(format_converter->Initialize(
+                    decoder_frame.get(), target_pixel_format,
+                    WICBitmapDitherTypeNone, nullptr, 0.0f, WICBitmapPaletteTypeCustom
+                ));
+                decodeFrame(format_converter.get());
+            }
+        }
+        else {
+            decodeFrame(decoder_frame.get());
+        }
+    }
+
+    void unloadImage() {
+        m_opened_texture.reset();
+        m_opened_srv.reset();
     }
 
     void layoutMainMenu() {
@@ -192,10 +366,17 @@ public:
     }
 
     void layoutImageView() {
-        ImGuiWindowFlags flags{};
-        ImGuiWindowFlags_Modal
-        if (ImGui::Begin("Image View", nullptr, flags)) {
-
+        if (ImGui::Begin("Image View")) {
+            ImGui::Text("打开的文件：%s", m_open_file_path.c_str());
+            if (m_opened_texture) {
+                D3D11_TEXTURE2D_DESC texture_info{};
+                m_opened_texture->GetDesc(&texture_info);
+                ImGui::Text("图像尺寸：%u x %u", texture_info.Width, texture_info.Height);
+                ImGui::Image(
+                    reinterpret_cast<ImTextureID>(m_opened_srv.get()),
+                    ImVec2(texture_info.Width, texture_info.Height)
+                );
+            }
         }
         ImGui::End();
     }
@@ -279,8 +460,12 @@ private:
     ImFontGlyphRangesBuilder m_font_glyph_ranges_builder;
     bool m_show_demo_window{false};
     bool m_opened{false};
-    std::wstring m_open_file_path;
+    std::string m_open_file_path;
     bool m_font_glyph_cache_dirty{false};
+    wil::com_ptr<IWICImagingFactory> m_wic_factory;
+    Image2D m_image;
+    wil::com_ptr<ID3D11Texture2D> m_opened_texture;
+    wil::com_ptr<ID3D11ShaderResourceView> m_opened_srv;
 
 public:
     static Application& getInstance() {
