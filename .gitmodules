@@ -4,3 +4,6 @@
 [submodule "external/wil"]
 	path = external/wil
 	url = https://github.com/microsoft/wil.git
+[submodule "external/DirectXTK"]
+	path = external/DirectXTK
+	url = https://github.com/microsoft/DirectXTK.git
