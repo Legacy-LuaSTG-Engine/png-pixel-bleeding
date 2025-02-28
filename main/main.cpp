@@ -158,9 +158,10 @@ public:
         do {
             miss_count = 0;
             Image2D cache = *this;
+            BooleanMap2D processed_cache = processed;
             for (uint32_t y = 0; y < height(); ++y) {
                 for (uint32_t x = 0; x < width(); ++x) {
-                    if (processed.get(x, y)) {
+                    if (processed_cache.get(x, y)) {
                         continue;
                     }
                     auto& color = pixel(x, y);
@@ -168,7 +169,7 @@ public:
                         processed.set(x, y);
                         continue;
                     }
-                    if (!cache.findNotTransparentNeighbors(processed, x, y, count, results)) {
+                    if (!cache.findNotTransparentNeighbors(processed_cache, x, y, count, results)) {
                         ++miss_count;
                         continue;
                     }
@@ -269,6 +270,7 @@ public:
         m_font_glyph_ranges_builder.AddText("临近采样缩放");
         m_font_glyph_ranges_builder.AddText("预览缩放");
         m_font_glyph_ranges_builder.AddText("处理透明像素");
+        m_font_glyph_ranges_builder.AddText("已处理透明像素");
 
         m_font_glyph_ranges.clear();
         m_font_glyph_ranges_builder.BuildRanges(&m_font_glyph_ranges);
@@ -413,30 +415,30 @@ public:
         wil::com_ptr<IWICBitmapFrameDecode> decoder_frame;
         THROW_IF_FAILED(decoder->GetFrame(0, decoder_frame.put()));
 
-        UINT color_context_count{};
-        THROW_IF_FAILED(decoder_frame->GetColorContexts(
-            0, nullptr, &color_context_count
-        ));
-        std::vector<IWICColorContext*> color_contexts(color_context_count);
-        THROW_IF_FAILED(decoder_frame->GetColorContexts(
-            color_context_count, color_contexts.data(), &color_context_count
-        ));
-        [[maybe_unused]] auto const auto_release_color_contexts = wil::scope_exit([&]() -> void {
-            for (auto const color_context : color_contexts) {
-                if (color_context) {
-                    color_context->Release();
-                }
-            }
-            color_contexts.clear();
-        });
-        for (auto const color_context : color_contexts) {
-            WICColorContextType type{};
-            THROW_IF_FAILED(color_context->GetType(&type));
-            if (type == WICColorContextExifColorSpace) {
-                UINT color_space{};
-                THROW_IF_FAILED(color_context->GetExifColorSpace(&color_space));
-            }
-        }
+        //UINT color_context_count{};
+        //THROW_IF_FAILED(decoder_frame->GetColorContexts(
+        //    0, nullptr, &color_context_count
+        //));
+        //std::vector<IWICColorContext*> color_contexts(color_context_count);
+        //THROW_IF_FAILED(decoder_frame->GetColorContexts(
+        //    color_context_count, color_contexts.data(), &color_context_count
+        //));
+        //[[maybe_unused]] auto const auto_release_color_contexts = wil::scope_exit([&]() -> void {
+        //    for (auto const color_context : color_contexts) {
+        //        if (color_context) {
+        //            color_context->Release();
+        //        }
+        //    }
+        //    color_contexts.clear();
+        //});
+        //for (auto const color_context : color_contexts) {
+        //    WICColorContextType type{};
+        //    THROW_IF_FAILED(color_context->GetType(&type));
+        //    if (type == WICColorContextExifColorSpace) {
+        //        UINT color_space{};
+        //        THROW_IF_FAILED(color_context->GetExifColorSpace(&color_space));
+        //    }
+        //}
 
         // convert
 
@@ -484,6 +486,7 @@ public:
     }
 
     void unloadImage() {
+        m_image_processed = false;
         m_image.clear();
         m_opened_texture.reset();
         m_opened_srv.reset();
@@ -532,9 +535,18 @@ public:
                 D3D11_TEXTURE2D_DESC texture_info{};
                 m_opened_texture->GetDesc(&texture_info);
                 ImGui::Text("图像尺寸：%u x %u", texture_info.Width, texture_info.Height);
-                if (ImGui::Button("处理透明像素")) {
+                bool button_disabled{false};
+                if (m_image_processed) {
+                    button_disabled = true;
+                    ImGui::BeginDisabled();
+                }
+                if (ImGui::Button(m_image_processed ? "已处理透明像素" : "处理透明像素")) {
                     m_image.doPixelBleeding();
                     uploadTextureData();
+                    m_image_processed = true;
+                }
+                if (button_disabled) {
+                    ImGui::EndDisabled();
                 }
                 ImGui::SameLine();
                 ImGui::Checkbox("预览透明度通道", &m_preview_alpha);
@@ -638,6 +650,7 @@ private:
     wil::com_ptr<ID3D11BlendState> m_blend_state_one;
 
     bool m_opened{false};
+    bool m_image_processed{false};
     std::string m_open_file_path;
     bool m_font_glyph_cache_dirty{false};
     Image2D m_image;
