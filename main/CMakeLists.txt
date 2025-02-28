@@ -13,4 +13,5 @@ target_link_libraries(png_pixel_bleed PRIVATE
         imgui
         imgui_impl_win32
         imgui_impl_dx11
+        DirectXTK
 )
