@@ -318,6 +318,8 @@ public:
     }
 
     void openFileCommand() {
+        closeFileCommand();
+
         auto const file_open_dialog = winrt::create_instance<IFileOpenDialog>(CLSID_FileOpenDialog);
         FILEOPENDIALOGOPTIONS options{};
         THROW_IF_FAILED(file_open_dialog->GetOptions(&options));
@@ -346,6 +348,36 @@ public:
                 CoTaskMemFree(path);
             }
         }
+    }
+
+    void saveFileCommand() {
+        if (!m_wic_factory) {
+            m_wic_factory = wil::CoCreateInstance<IWICImagingFactory>(CLSID_WICImagingFactory);
+        }
+
+        wil::com_ptr<IWICStream> stream;
+        THROW_IF_FAILED(m_wic_factory->CreateStream(stream.put()));
+        auto const file_path = winrt::to_hstring(m_open_file_path);
+        THROW_IF_FAILED(stream->InitializeFromFilename(file_path.c_str(), GENERIC_WRITE));
+
+        wil::com_ptr<IWICBitmapEncoder> encoder;
+        THROW_IF_FAILED(m_wic_factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.put()));
+        THROW_IF_FAILED(encoder->Initialize(stream.get(), WICBitmapEncoderNoCache));
+
+        wil::com_ptr<IWICBitmapFrameEncode> encoder_frame;
+        wil::com_ptr<IPropertyBag2> props;
+        THROW_IF_FAILED(encoder->CreateNewFrame(encoder_frame.put(), props.put()));
+
+        THROW_IF_FAILED(encoder_frame->Initialize(props.get()));
+        THROW_IF_FAILED(encoder_frame->SetSize(m_image.width(), m_image.height()));
+        auto target_pixel_format{GUID_WICPixelFormat32bppBGRA};
+        THROW_IF_FAILED(encoder_frame->SetPixelFormat(&target_pixel_format));
+        THROW_IF_FAILED(encoder_frame->WritePixels(
+            m_image.height(), m_image.pitch(), m_image.size(), m_image.buffer<BYTE>()
+        ));
+
+        THROW_IF_FAILED(encoder_frame->Commit());
+        THROW_IF_FAILED(encoder->Commit());
     }
 
     void closeFileCommand() {
@@ -502,6 +534,7 @@ public:
                     closeFileCommand();
                 }
                 if (ImGui::MenuItem("保存", nullptr, false, m_opened)) {
+                    saveFileCommand();
                 }
                 if (ImGui::MenuItem("另存为", nullptr, false, m_opened)) {
                 }
