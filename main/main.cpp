@@ -18,16 +18,21 @@
 #define NOMCX
 #define NOIME
 #include <windows.h>
+#include <shobjidl_core.h>
+#include <winrt/base.h>
 #include <dxgi1_6.h>
 #include <d3d11_4.h>
+#include <wil/resource.h>
+#include <wil/com.h>
+#include <wil/result_macros.h>
 
 // Data
-static ID3D11Device*            g_pd3dDevice = nullptr;
-static ID3D11DeviceContext*     g_pd3dDeviceContext = nullptr;
-static IDXGISwapChain*          g_pSwapChain = nullptr;
-static bool                     g_SwapChainOccluded = false;
-static UINT                     g_ResizeWidth = 0, g_ResizeHeight = 0;
-static ID3D11RenderTargetView*  g_mainRenderTargetView = nullptr;
+static ID3D11Device* g_pd3dDevice = nullptr;
+static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
+static IDXGISwapChain* g_pSwapChain = nullptr;
+static bool g_SwapChainOccluded = false;
+static UINT g_ResizeWidth = 0, g_ResizeHeight = 0;
+static ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 
 // Forward declarations of helper functions
 bool CreateDeviceD3D(HWND hWnd);
@@ -49,9 +54,10 @@ public:
         }
         m_gui_initialized = true;
 
-        ImGuiIO& io = ImGui::GetIO(); (void)io;
-        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-        io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+        ImGuiIO& io = ImGui::GetIO();
+        (void)io;
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
 
         if (!ImGui_ImplWin32_Init(hwnd)) {
             return false;
@@ -65,6 +71,7 @@ public:
 
         return initGuiFont();
     }
+
     bool initGuiFont() {
         ImGuiIO& io = ImGui::GetIO();
 
@@ -82,8 +89,10 @@ public:
 
         auto const scaling = ImGui_ImplWin32_GetDpiScaleForHwnd(m_win32_window);
         auto const font_size = 16.0f * scaling;
-        if (!io.Fonts->AddFontFromFileTTF(R"(C:\Windows\Fonts\msyh.ttc)", font_size, nullptr, m_font_glyph_ranges.Data)) {
-            if (!io.Fonts->AddFontFromFileTTF(R"(C:\Windows\Fonts\msyh.ttf)", font_size, nullptr, m_font_glyph_ranges.Data)) {
+        if (!io.Fonts->AddFontFromFileTTF(R"(C:\Windows\Fonts\msyh.ttc)", font_size, nullptr,
+                                          m_font_glyph_ranges.Data)) {
+            if (!io.Fonts->AddFontFromFileTTF(R"(C:\Windows\Fonts\msyh.ttf)", font_size, nullptr,
+                                              m_font_glyph_ranges.Data)) {
                 return false;
             }
         }
@@ -95,6 +104,7 @@ public:
 
         return true;
     }
+
     void destroyGui() {
         if (m_gui_backend_d3d11_initialized) {
             ImGui_ImplDX11_Shutdown();
@@ -109,6 +119,7 @@ public:
             m_gui_initialized = false;
         }
     }
+
     bool layoutGui() {
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
@@ -116,13 +127,35 @@ public:
         if (ImGui::BeginMainMenuBar()) {
             if (ImGui::BeginMenu("文件")) {
                 if (ImGui::MenuItem("打开")) {
+                    auto const file_open_dialog = winrt::create_instance<IFileOpenDialog>(CLSID_FileOpenDialog);
+                    FILEOPENDIALOGOPTIONS options{};
+                    THROW_IF_FAILED(file_open_dialog->GetOptions(&options));
+                    options |= FOS_FORCEFILESYSTEM;
+                    THROW_IF_FAILED(file_open_dialog->SetOptions(options));
+                    constexpr COMDLG_FILTERSPEC file_types[]{
+                        COMDLG_FILTERSPEC{
+                            .pszName{L"PNG 文件"},
+                            .pszSpec{L"*.png"},
+                        }
+                    };
+                    THROW_IF_FAILED(file_open_dialog->SetFileTypes(
+                        std::size(file_types), file_types
+                    ));
+                    THROW_IF_FAILED(file_open_dialog->SetFileTypeIndex(1));
+                    THROW_IF_FAILED(file_open_dialog->SetDefaultExtension(file_types[0].pszSpec));
+                    if (SUCCEEDED(THROW_IF_FAILED(file_open_dialog->Show(nullptr)))) {
+                        wil::com_ptr<IShellItem> item;
+                        THROW_IF_FAILED(file_open_dialog->GetResult(item.put()));
+                        PWSTR path{};
+                        if (SUCCEEDED(THROW_IF_FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))) {
 
+                            CoTaskMemFree(path);
+                        }
+                    }
                 }
                 if (ImGui::MenuItem("关闭")) {
-
                 }
                 if (ImGui::MenuItem("保存")) {
-
                 }
                 ImGui::EndMenu();
             }
@@ -164,11 +197,12 @@ public:
 
         auto const clear_color = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
         g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
-        g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, reinterpret_cast<float const*>(&clear_color));
+        g_pd3dDeviceContext->
+            ClearRenderTargetView(g_mainRenderTargetView, reinterpret_cast<float const*>(&clear_color));
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
         // Present
-        HRESULT hr = g_pSwapChain->Present(1, 0);   // Present with vsync
+        HRESULT hr = g_pSwapChain->Present(1, 0); // Present with vsync
         //HRESULT hr = g_pSwapChain->Present(0, 0); // Present without vsync
         g_SwapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
 
@@ -189,6 +223,7 @@ public:
             DispatchMessageW(&msg);
         }
     }
+
 private:
     HWND m_win32_window{};
     bool m_gui_initialized{false};
@@ -197,6 +232,7 @@ private:
     ImVector<ImWchar> m_font_glyph_ranges;
     ImFontGlyphRangesBuilder m_font_glyph_ranges_builder;
     bool m_show_demo_window{false};
+
 public:
     static Application& getInstance() {
         static Application instance;
@@ -205,17 +241,21 @@ public:
 };
 
 // Main code
-int main(int, char**)
-{
+int main(int, char**) {
+    winrt::init_apartment();
+
     // Create application window
     //ImGui_ImplWin32_EnableDpiAwareness();
-    WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"ImGui Example", nullptr };
+    WNDCLASSEXW wc = {
+        sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr,
+        L"ImGui Example", nullptr
+    };
     ::RegisterClassExW(&wc);
-    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"Dear ImGui DirectX11 Example", WS_OVERLAPPEDWINDOW, 100, 100, 1280, 800, nullptr, nullptr, wc.hInstance, nullptr);
+    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"Dear ImGui DirectX11 Example", WS_OVERLAPPEDWINDOW, 100, 100, 1280,
+                                800, nullptr, nullptr, wc.hInstance, nullptr);
 
     // Initialize Direct3D
-    if (!CreateDeviceD3D(hwnd))
-    {
+    if (!CreateDeviceD3D(hwnd)) {
         CleanupDeviceD3D();
         ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
         return 1;
@@ -242,8 +282,7 @@ int main(int, char**)
 
 // Helper functions
 
-bool CreateDeviceD3D(HWND hWnd)
-{
+bool CreateDeviceD3D(HWND hWnd) {
     // Setup swap chain
     DXGI_SWAP_CHAIN_DESC sd;
     ZeroMemory(&sd, sizeof(sd));
@@ -264,10 +303,14 @@ bool CreateDeviceD3D(HWND hWnd)
     UINT createDeviceFlags = 0;
     //createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
     D3D_FEATURE_LEVEL featureLevel;
-    const D3D_FEATURE_LEVEL featureLevelArray[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0, };
-    HRESULT res = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags, featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain, &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
+    const D3D_FEATURE_LEVEL featureLevelArray[2] = {D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0,};
+    HRESULT res = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags,
+                                                featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain,
+                                                &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
     if (res == DXGI_ERROR_UNSUPPORTED) // Try high-performance WARP software driver if hardware is not available.
-        res = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, createDeviceFlags, featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain, &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
+        res = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, createDeviceFlags,
+                                            featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain, &g_pd3dDevice,
+                                            &featureLevel, &g_pd3dDeviceContext);
     if (res != S_OK)
         return false;
 
@@ -275,25 +318,34 @@ bool CreateDeviceD3D(HWND hWnd)
     return true;
 }
 
-void CleanupDeviceD3D()
-{
+void CleanupDeviceD3D() {
     CleanupRenderTarget();
-    if (g_pSwapChain) { g_pSwapChain->Release(); g_pSwapChain = nullptr; }
-    if (g_pd3dDeviceContext) { g_pd3dDeviceContext->Release(); g_pd3dDeviceContext = nullptr; }
-    if (g_pd3dDevice) { g_pd3dDevice->Release(); g_pd3dDevice = nullptr; }
+    if (g_pSwapChain) {
+        g_pSwapChain->Release();
+        g_pSwapChain = nullptr;
+    }
+    if (g_pd3dDeviceContext) {
+        g_pd3dDeviceContext->Release();
+        g_pd3dDeviceContext = nullptr;
+    }
+    if (g_pd3dDevice) {
+        g_pd3dDevice->Release();
+        g_pd3dDevice = nullptr;
+    }
 }
 
-void CreateRenderTarget()
-{
+void CreateRenderTarget() {
     ID3D11Texture2D* pBackBuffer;
     g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
     g_pd3dDevice->CreateRenderTargetView(pBackBuffer, nullptr, &g_mainRenderTargetView);
     pBackBuffer->Release();
 }
 
-void CleanupRenderTarget()
-{
-    if (g_mainRenderTargetView) { g_mainRenderTargetView->Release(); g_mainRenderTargetView = nullptr; }
+void CleanupRenderTarget() {
+    if (g_mainRenderTargetView) {
+        g_mainRenderTargetView->Release();
+        g_mainRenderTargetView = nullptr;
+    }
 }
 
 // Forward declare message handler from imgui_impl_win32.cpp
@@ -304,13 +356,11 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application, or clear/overwrite your copy of the mouse data.
 // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application, or clear/overwrite your copy of the keyboard data.
 // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
-LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
+LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
         return true;
 
-    switch (msg)
-    {
+    switch (msg) {
     case WM_SIZE:
         if (wParam == SIZE_MINIMIZED)
             return 0;

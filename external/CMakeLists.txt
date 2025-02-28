@@ -58,3 +58,13 @@ target_link_libraries(imgui_impl_dx11 PUBLIC
         d3d11.lib
         d3dcompiler.lib
 )
+
+# wil
+
+add_library(wil INTERFACE)
+target_include_directories(wil INTERFACE
+        wil/include
+)
+target_sources(wil INTERFACE
+    wil/natvis/wil.natvis
+)
