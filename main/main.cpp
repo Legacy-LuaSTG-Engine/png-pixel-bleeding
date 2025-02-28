@@ -350,14 +350,14 @@ public:
         }
     }
 
-    void saveFileCommand() {
+    void saveFileAs(std::string const& path) {
         if (!m_wic_factory) {
             m_wic_factory = wil::CoCreateInstance<IWICImagingFactory>(CLSID_WICImagingFactory);
         }
 
         wil::com_ptr<IWICStream> stream;
         THROW_IF_FAILED(m_wic_factory->CreateStream(stream.put()));
-        auto const file_path = winrt::to_hstring(m_open_file_path);
+        auto const file_path = winrt::to_hstring(path);
         THROW_IF_FAILED(stream->InitializeFromFilename(file_path.c_str(), GENERIC_WRITE));
 
         wil::com_ptr<IWICBitmapEncoder> encoder;
@@ -378,6 +378,39 @@ public:
 
         THROW_IF_FAILED(encoder_frame->Commit());
         THROW_IF_FAILED(encoder->Commit());
+    }
+
+    void saveFileCommand() {
+        saveFileAs(m_open_file_path);
+    }
+
+    void saveFileAsCommand() {
+        auto const file_save_dialog = winrt::create_instance<IFileSaveDialog>(CLSID_FileSaveDialog);
+        FILEOPENDIALOGOPTIONS options{};
+        THROW_IF_FAILED(file_save_dialog->GetOptions(&options));
+        options |= FOS_FORCEFILESYSTEM;
+        THROW_IF_FAILED(file_save_dialog->SetOptions(options));
+        constexpr COMDLG_FILTERSPEC file_types[]{
+            COMDLG_FILTERSPEC{
+                .pszName{L"PNG 文件"},
+                .pszSpec{L"*.png"},
+            }
+        };
+        THROW_IF_FAILED(file_save_dialog->SetFileTypes(
+            std::size(file_types), file_types
+        ));
+        THROW_IF_FAILED(file_save_dialog->SetFileTypeIndex(1));
+        THROW_IF_FAILED(file_save_dialog->SetDefaultExtension(file_types[0].pszSpec));
+        if (SUCCEEDED(THROW_IF_FAILED(file_save_dialog->Show(nullptr)))) {
+            wil::com_ptr<IShellItem> item;
+            THROW_IF_FAILED(file_save_dialog->GetResult(item.put()));
+            PWSTR path{};
+            if (SUCCEEDED(THROW_IF_FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))) {
+                std::string const save_file_path(winrt::to_string(path));
+                CoTaskMemFree(path);
+                saveFileAs(save_file_path);
+            }
+        }
     }
 
     void closeFileCommand() {
@@ -537,6 +570,7 @@ public:
                     saveFileCommand();
                 }
                 if (ImGui::MenuItem("另存为", nullptr, false, m_opened)) {
+                    saveFileAsCommand();
                 }
                 ImGui::EndMenu();
             }
