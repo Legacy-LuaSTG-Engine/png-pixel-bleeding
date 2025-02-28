@@ -52,4 +52,9 @@ target_sources(imgui_impl_dx11 PRIVATE
         imgui/backends/imgui_impl_dx11.h
         imgui/backends/imgui_impl_dx11.cpp
 )
-target_link_libraries(imgui_impl_dx11 PUBLIC imgui)
+target_link_libraries(imgui_impl_dx11 PUBLIC
+        imgui
+        dxgi.lib
+        d3d11.lib
+        d3dcompiler.lib
+)
