@@ -46,6 +46,28 @@ void CreateRenderTarget();
 void CleanupRenderTarget();
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
+class BooleanMap2D {
+public:
+    [[nodiscard]] bool get(uint32_t const x, uint32_t const y) const {
+        return m_pixels.at(y * m_width + x);
+    }
+
+    void set(uint32_t const x, uint32_t const y) {
+        m_pixels.at(y * m_width + x) = true;
+    }
+
+    void resize(uint32_t const width, uint32_t const height) {
+        m_width = width;
+        m_height = height;
+        m_pixels.resize(width * height);
+    }
+
+private:
+    std::vector<bool> m_pixels;
+    uint32_t m_width{};
+    uint32_t m_height{};
+};
+
 class Image2D {
 public:
     [[nodiscard]] uint32_t width() const noexcept {
@@ -69,6 +91,13 @@ public:
         return reinterpret_cast<T*>(m_pixels.data());
     }
 
+    void clear() {
+        m_width = 0;
+        m_height = 0;
+        m_pixels.clear();
+        m_pixels.shrink_to_fit();
+    }
+
     void resize(uint32_t const width, uint32_t const height) {
         m_width = width;
         m_height = height;
@@ -85,6 +114,71 @@ public:
 
     [[nodiscard]] DirectX::PackedVector::XMCOLOR& pixel(uint32_t const x, uint32_t const y) {
         return m_pixels.at(y * m_width + x);
+    }
+
+    [[nodiscard]] bool findNotTransparentNeighbors(
+        BooleanMap2D const& processed, uint32_t const x, uint32_t const y,
+        uint32_t& count, DirectX::PackedVector::XMCOLOR results[8]
+    ) const noexcept {
+        count = 0;
+        for (int32_t yy = -1; yy <= 1; ++yy) {
+            for (int32_t xx = -1; xx <= 1; ++xx) {
+                if (xx == 0 && yy == 0) {
+                    continue; // exclude center (self)
+                }
+                if (xx == -1 && x == 0) {
+                    continue; // out of bounds
+                }
+                if (xx == 1 && x == width() - 1) {
+                    continue; // out of bounds
+                }
+                if (yy == -1 && y == 0) {
+                    continue; // out of bounds
+                }
+                if (yy == 1 && y == height() - 1) {
+                    continue; // out of bounds
+                }
+                auto const px = pixel(x + xx, y + yy);
+                if (!processed.get(x + xx, y + yy) && px.a == 0) {
+                    continue; // ignore transparent pixel or not processed pixel
+                }
+                results[count] = px;
+                ++count;
+            }
+        }
+        return count > 0;
+    }
+
+    void doPixelBleeding() {
+        BooleanMap2D processed;
+        processed.resize(width(), height());
+        size_t miss_count{};
+        uint32_t count{};
+        DirectX::PackedVector::XMCOLOR results[8]{};
+        do {
+            miss_count = 0;
+            Image2D cache = *this;
+            for (uint32_t y = 0; y < height(); ++y) {
+                for (uint32_t x = 0; x < width(); ++x) {
+                    if (processed.get(x, y)) {
+                        continue;
+                    }
+                    auto& color = pixel(x, y);
+                    if (color.a > 0) {
+                        processed.set(x, y);
+                        continue;
+                    }
+                    if (!cache.findNotTransparentNeighbors(processed, x, y, count, results)) {
+                        ++miss_count;
+                        continue;
+                    }
+                    color = results[0];
+                    color.a = 0;
+                    processed.set(x, y);
+                }
+            }
+        }
+        while (miss_count > 0);
     }
 
 private:
@@ -121,6 +215,33 @@ public:
         }
         m_gui_backend_d3d11_initialized = true;
 
+        D3D11_SAMPLER_DESC sampler_state_info{};
+        sampler_state_info.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+        sampler_state_info.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+        sampler_state_info.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+        sampler_state_info.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        sampler_state_info.MipLODBias = 0;
+        sampler_state_info.MaxAnisotropy = 1;
+        sampler_state_info.ComparisonFunc = D3D11_COMPARISON_NEVER;
+        sampler_state_info.MinLOD = -D3D11_FLOAT32_MAX;
+        sampler_state_info.MaxLOD = D3D11_FLOAT32_MAX;
+        THROW_IF_FAILED(g_pd3dDevice->CreateSamplerState(&sampler_state_info, m_sampler_state_point.put()));
+
+        D3D11_RENDER_TARGET_BLEND_DESC blend_info{};
+        blend_info.BlendEnable = TRUE;
+        blend_info.SrcBlend = D3D11_BLEND_ONE;
+        blend_info.DestBlend = D3D11_BLEND_ZERO;
+        blend_info.BlendOp = D3D11_BLEND_OP_ADD;
+        blend_info.SrcBlendAlpha = D3D11_BLEND_ONE;
+        blend_info.DestBlendAlpha = D3D11_BLEND_ONE;
+        blend_info.BlendOpAlpha = D3D11_BLEND_OP_ADD;
+        blend_info.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+        D3D11_BLEND_DESC blend_state_info{};
+        for (auto& render_target : blend_state_info.RenderTarget) {
+            render_target = blend_info;
+        }
+        THROW_IF_FAILED(g_pd3dDevice->CreateBlendState(&blend_state_info, m_blend_state_one.put()));
+
         return initGuiFont();
     }
 
@@ -140,9 +261,14 @@ public:
         m_font_glyph_ranges_builder.AddText("帮助");
         m_font_glyph_ranges_builder.AddText("演示（Dear ImGui）");
 
+        m_font_glyph_ranges_builder.AddText("工作区");
         m_font_glyph_ranges_builder.AddText("打开的文件：");
         m_font_glyph_ranges_builder.AddText(m_open_file_path.c_str());
         m_font_glyph_ranges_builder.AddText("图像尺寸：");
+        m_font_glyph_ranges_builder.AddText("预览透明度通道");
+        m_font_glyph_ranges_builder.AddText("临近采样缩放");
+        m_font_glyph_ranges_builder.AddText("预览缩放");
+        m_font_glyph_ranges_builder.AddText("处理透明像素");
 
         m_font_glyph_ranges.clear();
         m_font_glyph_ranges_builder.BuildRanges(&m_font_glyph_ranges);
@@ -172,6 +298,9 @@ public:
     }
 
     void destroyGui() {
+        m_sampler_state_point.reset();
+        m_blend_state_one.reset();
+        closeFileCommand();
         if (m_gui_backend_d3d11_initialized) {
             ImGui_ImplDX11_Shutdown();
             m_gui_backend_d3d11_initialized = false;
@@ -219,6 +348,8 @@ public:
 
     void closeFileCommand() {
         m_opened = false;
+        m_open_file_path.clear();
+        unloadImage();
     }
 
     void createTextureResources(uint32_t const width, uint32_t const height) {
@@ -247,6 +378,21 @@ public:
         THROW_IF_FAILED(g_pd3dDevice->CreateShaderResourceView(
             m_opened_texture.get(), &srv_info, m_opened_srv.put()
         ));
+    }
+
+    void uploadTextureData() {
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        THROW_IF_FAILED(g_pd3dDeviceContext->Map(
+            m_opened_texture.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped
+        ));
+        auto source = m_image.buffer<uint8_t>();
+        auto pointer = static_cast<uint8_t*>(mapped.pData);
+        for (uint32_t y = 0; y < m_image.height(); ++y) {
+            std::memcpy(pointer, source, m_image.pitch());
+            source += m_image.pitch();
+            pointer += mapped.RowPitch;
+        }
+        g_pd3dDeviceContext->Unmap(m_opened_texture.get(), 0);
     }
 
     void loadImage() {
@@ -338,6 +484,7 @@ public:
     }
 
     void unloadImage() {
+        m_image.clear();
         m_opened_texture.reset();
         m_opened_srv.reset();
     }
@@ -365,17 +512,42 @@ public:
         }
     }
 
+    static void applyRenderState(ImDrawList const* const parent_list, ImDrawCmd const* const cmd) {
+        auto const self = static_cast<Application*>(cmd->UserCallbackData);
+        if (self->m_preview_point_scale) {
+            ID3D11SamplerState* const sampler_state[1]{self->m_sampler_state_point.get()};
+            g_pd3dDeviceContext->PSSetSamplers(0, 1, sampler_state);
+        }
+        if (!self->m_preview_alpha) {
+            constexpr float blend_factor[4]{};
+            g_pd3dDeviceContext->OMSetBlendState(
+                self->m_blend_state_one.get(), blend_factor,D3D11_DEFAULT_SAMPLE_MASK);
+        }
+    }
+
     void layoutImageView() {
-        if (ImGui::Begin("Image View")) {
+        if (ImGui::Begin("工作区")) {
             ImGui::Text("打开的文件：%s", m_open_file_path.c_str());
             if (m_opened_texture) {
                 D3D11_TEXTURE2D_DESC texture_info{};
                 m_opened_texture->GetDesc(&texture_info);
                 ImGui::Text("图像尺寸：%u x %u", texture_info.Width, texture_info.Height);
+                if (ImGui::Button("处理透明像素")) {
+                    m_image.doPixelBleeding();
+                    uploadTextureData();
+                }
+                ImGui::SameLine();
+                ImGui::Checkbox("预览透明度通道", &m_preview_alpha);
+                ImGui::SameLine();
+                ImGui::Checkbox("临近采样缩放", &m_preview_point_scale);
+                ImGui::SameLine();
+                ImGui::SliderFloat("预览缩放", &m_preview_scale, 0.01f, 10.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+                ImGui::GetWindowDrawList()->AddCallback(&applyRenderState, this);
                 ImGui::Image(
                     reinterpret_cast<ImTextureID>(m_opened_srv.get()),
-                    ImVec2(texture_info.Width, texture_info.Height)
+                    ImVec2(texture_info.Width * m_preview_scale, texture_info.Height * m_preview_scale)
                 );
+                ImGui::GetWindowDrawList()->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
             }
         }
         ImGui::End();
@@ -459,13 +631,22 @@ private:
     ImVector<ImWchar> m_font_glyph_ranges;
     ImFontGlyphRangesBuilder m_font_glyph_ranges_builder;
     bool m_show_demo_window{false};
+
+    wil::com_ptr<IWICImagingFactory> m_wic_factory;
+
+    wil::com_ptr<ID3D11SamplerState> m_sampler_state_point;
+    wil::com_ptr<ID3D11BlendState> m_blend_state_one;
+
     bool m_opened{false};
     std::string m_open_file_path;
     bool m_font_glyph_cache_dirty{false};
-    wil::com_ptr<IWICImagingFactory> m_wic_factory;
     Image2D m_image;
     wil::com_ptr<ID3D11Texture2D> m_opened_texture;
     wil::com_ptr<ID3D11ShaderResourceView> m_opened_srv;
+
+    float m_preview_scale{1.0f};
+    bool m_preview_point_scale{false};
+    bool m_preview_alpha{false};
 
 public:
     static Application& getInstance() {
