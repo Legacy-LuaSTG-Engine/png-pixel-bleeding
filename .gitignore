@@ -1,0 +1,10 @@
+# IDE
+/.vs
+/.idea
+/.vscode
+/.clion
+
+# build
+/out
+/cmake-build*
+/build
