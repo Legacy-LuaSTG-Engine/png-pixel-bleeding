@@ -6,10 +6,11 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+add_compile_definitions(_UNICODE UNICODE)
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     message(STATUS "CMAKE_CXX_COMPILER_ID: MSVC")
     message(STATUS "-- add compile option /utf-8 /W4 /sdl")
-    add_compile_options("/utf-8" "/W4" "/sdl")
+    add_compile_options(/utf-8 /W4 /sdl)
 endif ()
 
 add_subdirectory(external)
