@@ -7,6 +7,7 @@
 // - Introduction, links and more at the top of imgui.cpp
 
 #include <stdexcept>
+#include <string>
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -74,6 +75,7 @@ public:
 
     bool initGuiFont() {
         ImGuiIO& io = ImGui::GetIO();
+        io.Fonts->Clear();
 
         m_font_glyph_ranges_builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
 
@@ -81,11 +83,17 @@ public:
         m_font_glyph_ranges_builder.AddText("打开");
         m_font_glyph_ranges_builder.AddText("关闭");
         m_font_glyph_ranges_builder.AddText("保存");
+        m_font_glyph_ranges_builder.AddText("另存为");
 
         m_font_glyph_ranges_builder.AddText("帮助");
         m_font_glyph_ranges_builder.AddText("演示（Dear ImGui）");
 
+        m_font_glyph_ranges_builder.AddText("打开的文件：");
+        auto const open_file_path = winrt::to_string(m_open_file_path);
+        m_font_glyph_ranges_builder.AddText(open_file_path.c_str());
+
         m_font_glyph_ranges_builder.BuildRanges(&m_font_glyph_ranges);
+
 
         auto const scaling = ImGui_ImplWin32_GetDpiScaleForHwnd(m_win32_window);
         auto const font_size = 16.0f * scaling;
@@ -105,6 +113,12 @@ public:
         return true;
     }
 
+    void reloadGuiFont() {
+        ImGui_ImplDX11_Shutdown();
+        initGuiFont();
+        ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+    }
+
     void destroyGui() {
         if (m_gui_backend_d3d11_initialized) {
             ImGui_ImplDX11_Shutdown();
@@ -120,42 +134,52 @@ public:
         }
     }
 
-    bool layoutGui() {
-        ImGui_ImplDX11_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
+    void openFileCommand() {
+        auto const file_open_dialog = winrt::create_instance<IFileOpenDialog>(CLSID_FileOpenDialog);
+        FILEOPENDIALOGOPTIONS options{};
+        THROW_IF_FAILED(file_open_dialog->GetOptions(&options));
+        options |= FOS_FORCEFILESYSTEM;
+        THROW_IF_FAILED(file_open_dialog->SetOptions(options));
+        constexpr COMDLG_FILTERSPEC file_types[]{
+            COMDLG_FILTERSPEC{
+                .pszName{L"PNG 文件"},
+                .pszSpec{L"*.png"},
+            }
+        };
+        THROW_IF_FAILED(file_open_dialog->SetFileTypes(
+            std::size(file_types), file_types
+        ));
+        THROW_IF_FAILED(file_open_dialog->SetFileTypeIndex(1));
+        THROW_IF_FAILED(file_open_dialog->SetDefaultExtension(file_types[0].pszSpec));
+        if (SUCCEEDED(THROW_IF_FAILED(file_open_dialog->Show(nullptr)))) {
+            wil::com_ptr<IShellItem> item;
+            THROW_IF_FAILED(file_open_dialog->GetResult(item.put()));
+            PWSTR path{};
+            if (SUCCEEDED(THROW_IF_FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))) {
+                m_opened = true;
+                m_open_file_path.assign(path);
+                m_font_glyph_cache_dirty = true;
+                CoTaskMemFree(path);
+            }
+        }
+    }
+
+    void closeFileCommand() {
+        m_opened = false;
+    }
+
+    void layoutMainMenu() {
         if (ImGui::BeginMainMenuBar()) {
             if (ImGui::BeginMenu("文件")) {
                 if (ImGui::MenuItem("打开")) {
-                    auto const file_open_dialog = winrt::create_instance<IFileOpenDialog>(CLSID_FileOpenDialog);
-                    FILEOPENDIALOGOPTIONS options{};
-                    THROW_IF_FAILED(file_open_dialog->GetOptions(&options));
-                    options |= FOS_FORCEFILESYSTEM;
-                    THROW_IF_FAILED(file_open_dialog->SetOptions(options));
-                    constexpr COMDLG_FILTERSPEC file_types[]{
-                        COMDLG_FILTERSPEC{
-                            .pszName{L"PNG 文件"},
-                            .pszSpec{L"*.png"},
-                        }
-                    };
-                    THROW_IF_FAILED(file_open_dialog->SetFileTypes(
-                        std::size(file_types), file_types
-                    ));
-                    THROW_IF_FAILED(file_open_dialog->SetFileTypeIndex(1));
-                    THROW_IF_FAILED(file_open_dialog->SetDefaultExtension(file_types[0].pszSpec));
-                    if (SUCCEEDED(THROW_IF_FAILED(file_open_dialog->Show(nullptr)))) {
-                        wil::com_ptr<IShellItem> item;
-                        THROW_IF_FAILED(file_open_dialog->GetResult(item.put()));
-                        PWSTR path{};
-                        if (SUCCEEDED(THROW_IF_FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))) {
-
-                            CoTaskMemFree(path);
-                        }
-                    }
+                    openFileCommand();
                 }
-                if (ImGui::MenuItem("关闭")) {
+                if (ImGui::MenuItem("关闭", nullptr, false, m_opened)) {
+                    closeFileCommand();
                 }
-                if (ImGui::MenuItem("保存")) {
+                if (ImGui::MenuItem("保存", nullptr, false, m_opened)) {
+                }
+                if (ImGui::MenuItem("另存为", nullptr, false, m_opened)) {
                 }
                 ImGui::EndMenu();
             }
@@ -165,6 +189,23 @@ public:
             }
             ImGui::EndMainMenuBar();
         }
+    }
+
+    void layoutImageView() {
+        ImGuiWindowFlags flags{};
+        ImGuiWindowFlags_Modal
+        if (ImGui::Begin("Image View", nullptr, flags)) {
+
+        }
+        ImGui::End();
+    }
+
+    bool layoutGui() {
+        ImGui_ImplDX11_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
+        layoutMainMenu();
+        layoutImageView();
         if (m_show_demo_window) {
             ImGui::ShowDemoWindow(&m_show_demo_window);
         }
@@ -189,6 +230,11 @@ public:
             g_pSwapChain->ResizeBuffers(0, g_ResizeWidth, g_ResizeHeight, DXGI_FORMAT_UNKNOWN, 0);
             g_ResizeWidth = g_ResizeHeight = 0;
             CreateRenderTarget();
+        }
+
+        if (m_font_glyph_cache_dirty) {
+            m_font_glyph_cache_dirty = false;
+            reloadGuiFont();
         }
 
         if (!layoutGui()) {
@@ -232,6 +278,9 @@ private:
     ImVector<ImWchar> m_font_glyph_ranges;
     ImFontGlyphRangesBuilder m_font_glyph_ranges_builder;
     bool m_show_demo_window{false};
+    bool m_opened{false};
+    std::wstring m_open_file_path;
+    bool m_font_glyph_cache_dirty{false};
 
 public:
     static Application& getInstance() {
