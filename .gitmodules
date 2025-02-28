@@ -1,3 +1,6 @@
 [submodule "external/imgui"]
 	path = external/imgui
 	url = https://github.com/ocornut/imgui.git
+[submodule "external/wil"]
+	path = external/wil
+	url = https://github.com/microsoft/wil.git
