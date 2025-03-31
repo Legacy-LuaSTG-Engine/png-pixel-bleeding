@@ -31,7 +31,7 @@
 #include <wil/com.h>
 #include <wil/result_macros.h>
 
-#define APP_VERSION "1.0.1"
+#define APP_VERSION "0.2.0"
 
 // Data
 static ID3D11Device* g_pd3dDevice = nullptr;
