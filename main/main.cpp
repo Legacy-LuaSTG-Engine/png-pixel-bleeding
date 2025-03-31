@@ -31,6 +31,8 @@
 #include <wil/com.h>
 #include <wil/result_macros.h>
 
+#define APP_VERSION "1.0.1"
+
 // Data
 static ID3D11Device* g_pd3dDevice = nullptr;
 static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
@@ -138,23 +140,23 @@ public:
         };
         for (auto const& offset : offsets) {
             if (offset.x == -1 && x == 0) {
-                    continue; // out of bounds
-                }
+                continue; // out of bounds
+            }
             if (offset.x == 1 && x == width() - 1) {
-                    continue; // out of bounds
-                }
+                continue; // out of bounds
+            }
             if (offset.y == -1 && y == 0) {
-                    continue; // out of bounds
-                }
+                continue; // out of bounds
+            }
             if (offset.y == 1 && y == height() - 1) {
-                    continue; // out of bounds
-                }
+                continue; // out of bounds
+            }
             auto const px = pixel(x + offset.x, y + offset.y);
             if (!processed.get(x + offset.x, y + offset.y) && px.a == 0) {
-                    continue; // ignore transparent pixel or not processed pixel
-                }
-                results[count] = px;
-                ++count;
+                continue; // ignore transparent pixel or not processed pixel
+            }
+            results[count] = px;
+            ++count;
         }
         return count > 0;
     }
@@ -756,7 +758,7 @@ int main(int, char**) {
         L"png-pixel-bleeding", nullptr
     };
     ::RegisterClassExW(&wc);
-    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"PNG 透明像素处理", WS_OVERLAPPEDWINDOW, 100, 100, 1280,
+    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"PNG 透明像素处理 v" APP_VERSION, WS_OVERLAPPEDWINDOW, 100, 100, 1280,
                                 800, nullptr, nullptr, wc.hInstance, nullptr);
 
     // Initialize Direct3D
