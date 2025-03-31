@@ -46,6 +46,11 @@ void CreateRenderTarget();
 void CleanupRenderTarget();
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
+struct Vector2i {
+    int32_t x{};
+    int32_t y{};
+};
+
 class BooleanMap2D {
 public:
     [[nodiscard]] bool get(uint32_t const x, uint32_t const y) const {
@@ -121,30 +126,35 @@ public:
         uint32_t& count, DirectX::PackedVector::XMCOLOR results[8]
     ) const noexcept {
         count = 0;
-        for (int32_t yy = -1; yy <= 1; ++yy) {
-            for (int32_t xx = -1; xx <= 1; ++xx) {
-                if (xx == 0 && yy == 0) {
-                    continue; // exclude center (self)
-                }
-                if (xx == -1 && x == 0) {
+        constexpr Vector2i offsets[8]{
+            Vector2i{1, 0},
+            Vector2i{0, 1},
+            Vector2i{-1, 0},
+            Vector2i{0, -1},
+            Vector2i{1, 1},
+            Vector2i{-1, 1},
+            Vector2i{-1, -1},
+            Vector2i{1, -1},
+        };
+        for (auto const& offset : offsets) {
+            if (offset.x == -1 && x == 0) {
                     continue; // out of bounds
                 }
-                if (xx == 1 && x == width() - 1) {
+            if (offset.x == 1 && x == width() - 1) {
                     continue; // out of bounds
                 }
-                if (yy == -1 && y == 0) {
+            if (offset.y == -1 && y == 0) {
                     continue; // out of bounds
                 }
-                if (yy == 1 && y == height() - 1) {
+            if (offset.y == 1 && y == height() - 1) {
                     continue; // out of bounds
                 }
-                auto const px = pixel(x + xx, y + yy);
-                if (!processed.get(x + xx, y + yy) && px.a == 0) {
+            auto const px = pixel(x + offset.x, y + offset.y);
+            if (!processed.get(x + offset.x, y + offset.y) && px.a == 0) {
                     continue; // ignore transparent pixel or not processed pixel
                 }
                 results[count] = px;
                 ++count;
-            }
         }
         return count > 0;
     }
