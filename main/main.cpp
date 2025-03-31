@@ -582,7 +582,7 @@ public:
         }
     }
 
-    static void applyRenderState(ImDrawList const* const parent_list, ImDrawCmd const* const cmd) {
+    static void applyRenderState(ImDrawList const*, ImDrawCmd const* const cmd) {
         auto const self = static_cast<Application*>(cmd->UserCallbackData);
         if (self->m_preview_point_scale) {
             ID3D11SamplerState* const sampler_state[1]{self->m_sampler_state_point.get()};
