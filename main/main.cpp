@@ -346,7 +346,7 @@ public:
         ));
         THROW_IF_FAILED(file_open_dialog->SetFileTypeIndex(1));
         THROW_IF_FAILED(file_open_dialog->SetDefaultExtension(file_types[0].pszSpec));
-        if (SUCCEEDED(THROW_IF_FAILED(file_open_dialog->Show(nullptr)))) {
+        if (SUCCEEDED(file_open_dialog->Show(nullptr))) {
             wil::com_ptr<IShellItem> item;
             THROW_IF_FAILED(file_open_dialog->GetResult(item.put()));
             PWSTR path{};
@@ -411,7 +411,7 @@ public:
         ));
         THROW_IF_FAILED(file_save_dialog->SetFileTypeIndex(1));
         THROW_IF_FAILED(file_save_dialog->SetDefaultExtension(file_types[0].pszSpec));
-        if (SUCCEEDED(THROW_IF_FAILED(file_save_dialog->Show(nullptr)))) {
+        if (SUCCEEDED(file_save_dialog->Show(nullptr))) {
             wil::com_ptr<IShellItem> item;
             THROW_IF_FAILED(file_save_dialog->GetResult(item.put()));
             PWSTR path{};
