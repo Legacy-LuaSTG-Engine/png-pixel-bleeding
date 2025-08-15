@@ -31,7 +31,7 @@
 #include <wil/com.h>
 #include <wil/result_macros.h>
 
-#define APP_VERSION "0.2.0"
+#define APP_VERSION "0.3.0"
 
 // Data
 static ID3D11Device* g_pd3dDevice = nullptr;
@@ -262,53 +262,23 @@ public:
         ImGuiIO& io = ImGui::GetIO();
         io.Fonts->Clear();
 
-        m_font_glyph_ranges_builder.Clear();
-        m_font_glyph_ranges_builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
-
-        m_font_glyph_ranges_builder.AddText("文件");
-        m_font_glyph_ranges_builder.AddText("打开");
-        m_font_glyph_ranges_builder.AddText("关闭");
-        m_font_glyph_ranges_builder.AddText("保存");
-        m_font_glyph_ranges_builder.AddText("另存为");
-
-        m_font_glyph_ranges_builder.AddText("帮助");
-        m_font_glyph_ranges_builder.AddText("演示（Dear ImGui）");
-
-        m_font_glyph_ranges_builder.AddText("工作区");
-        m_font_glyph_ranges_builder.AddText("打开的文件：");
-        m_font_glyph_ranges_builder.AddText(m_open_file_path.c_str());
-        m_font_glyph_ranges_builder.AddText("图像尺寸：");
-        m_font_glyph_ranges_builder.AddText("预览透明度通道");
-        m_font_glyph_ranges_builder.AddText("临近采样缩放");
-        m_font_glyph_ranges_builder.AddText("预览缩放");
-        m_font_glyph_ranges_builder.AddText("处理透明像素");
-        m_font_glyph_ranges_builder.AddText("已处理透明像素");
-
-        m_font_glyph_ranges.clear();
-        m_font_glyph_ranges_builder.BuildRanges(&m_font_glyph_ranges);
-
-        auto const scaling = ImGui_ImplWin32_GetDpiScaleForHwnd(m_win32_window);
-        auto const font_size = 16.0f * scaling;
-        if (!io.Fonts->AddFontFromFileTTF(R"(C:\Windows\Fonts\msyh.ttc)", font_size, nullptr,
-                                          m_font_glyph_ranges.Data)) {
-            if (!io.Fonts->AddFontFromFileTTF(R"(C:\Windows\Fonts\msyh.ttf)", font_size, nullptr,
-                                              m_font_glyph_ranges.Data)) {
+        if (!io.Fonts->AddFontFromFileTTF(R"(C:\Windows\Fonts\msyh.ttc)")) {
+            if (!io.Fonts->AddFontFromFileTTF(R"(C:\Windows\Fonts\msyh.ttf)")) {
                 return false;
             }
         }
 
         ImGuiStyle style;
         ImGui::StyleColorsDark(&style);
+
+        auto const scaling = ImGui_ImplWin32_GetDpiScaleForHwnd(m_win32_window);
         style.ScaleAllSizes(scaling);
+        style.FontSizeBase = 16.0f;
+        style.FontScaleDpi = scaling;
+
         ImGui::GetStyle() = style;
 
         return true;
-    }
-
-    void reloadGuiFont() {
-        ImGui_ImplDX11_Shutdown();
-        initGuiFont();
-        ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
     }
 
     void destroyGui() {
@@ -355,7 +325,6 @@ public:
             if (SUCCEEDED(THROW_IF_FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))) {
                 m_opened = true;
                 m_open_file_path.assign(winrt::to_string(path));
-                m_font_glyph_cache_dirty = true;
                 loadImage();
                 CoTaskMemFree(path);
             }
@@ -676,11 +645,6 @@ public:
             CreateRenderTarget();
         }
 
-        if (m_font_glyph_cache_dirty) {
-            m_font_glyph_cache_dirty = false;
-            reloadGuiFont();
-        }
-
         if (!layoutGui()) {
             return false;
         }
@@ -719,8 +683,6 @@ private:
     bool m_gui_initialized{false};
     bool m_gui_backend_win32_initialized{false};
     bool m_gui_backend_d3d11_initialized{false};
-    ImVector<ImWchar> m_font_glyph_ranges;
-    ImFontGlyphRangesBuilder m_font_glyph_ranges_builder;
     bool m_show_demo_window{false};
 
     wil::com_ptr<IWICImagingFactory> m_wic_factory;
@@ -731,7 +693,6 @@ private:
     bool m_opened{false};
     bool m_image_processed{false};
     std::string m_open_file_path;
-    bool m_font_glyph_cache_dirty{false};
     Image2D m_image;
     wil::com_ptr<ID3D11Texture2D> m_opened_texture;
     wil::com_ptr<ID3D11ShaderResourceView> m_opened_srv;
@@ -881,6 +842,9 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_DESTROY:
         ::PostQuitMessage(0);
         return 0;
+    case WM_DPICHANGED:
+        ImGui::GetStyle().FontScaleDpi = static_cast<float>(LOWORD(wParam)) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
+        break;
     case WM_PAINT:
         Application::getInstance().frame();
         return 0;
