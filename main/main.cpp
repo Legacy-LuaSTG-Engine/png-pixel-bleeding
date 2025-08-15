@@ -610,17 +610,25 @@ public:
                 ImGui::SameLine();
                 auto const slider_size = ImGui::GetContentRegionAvail();
                 ImGui::SetNextItemWidth(slider_size.x);
-                ImGui::SliderFloat("预览缩放", &m_preview_scale, 0.01f, 10.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+                ImGui::SliderFloat("##Scaling", &m_preview_scale, 0.01f, 10.0f, "预览缩放 x%.3f", ImGuiSliderFlags_Logarithmic);
 
                 auto const container_size = ImGui::GetContentRegionAvail();
-                if (ImGui::BeginChild("##ImageContainer", container_size, ImGuiChildFlags_Borders)) {
-                    auto const image_size = ImGui::GetContentRegionAvail();
-                    ImGui::GetWindowDrawList()->AddCallback(&applyRenderState, this);
-                    ImGui::Image(
-                        reinterpret_cast<ImTextureID>(m_opened_srv.get()),
-                        //ImVec2(texture_info.Width * m_preview_scale, texture_info.Height * m_preview_scale)
-                        image_size
+                if (ImGui::BeginChild("##ImageContainer", container_size, ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)) {
+                    auto const space = ImGui::GetContentRegionAvail();
+                    auto const image_size = ImVec2(
+                        std::floor(texture_info.Width * m_preview_scale),
+                        std::floor(texture_info.Height * m_preview_scale)
                     );
+                    auto image_pos = ImVec2();
+                    if (image_size.x < space.x) {
+                        image_pos.x = std::floor((space.x - image_size.x) * 0.5f);
+                    }
+                    if (image_size.y < space.y) {
+                        image_pos.y = std::floor((space.y - image_size.y) * 0.5f);
+                    }
+                    ImGui::GetWindowDrawList()->AddCallback(&applyRenderState, this);
+                    ImGui::SetCursorPos(image_pos);
+                    ImGui::Image(reinterpret_cast<ImTextureID>(m_opened_srv.get()), image_size);
                     ImGui::GetWindowDrawList()->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
                 }
                 ImGui::EndChild();
