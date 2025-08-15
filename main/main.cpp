@@ -32,6 +32,7 @@
 #include <wil/result_macros.h>
 
 #define APP_VERSION "0.3.0"
+#define APP_NAME    "PNG 透明像素处理"
 
 // Data
 static ID3D11Device* g_pd3dDevice = nullptr;
@@ -555,8 +556,24 @@ public:
                 }
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("编辑")) {
+                if (ImGui::MenuItem("处理透明像素", nullptr, nullptr, !m_image_processed)) {
+                    m_image.doPixelBleeding();
+                    uploadTextureData();
+                    m_image_processed = true;
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("查看")) {
+                ImGui::MenuItem("预览透明度通道", nullptr, &m_preview_alpha);
+                ImGui::MenuItem("临近采样缩放", nullptr, &m_preview_point_scale);
+                ImGui::EndMenu();
+            }
             if (ImGui::BeginMenu("帮助")) {
                 ImGui::MenuItem("演示（Dear ImGui）", nullptr, &m_show_demo_window);
+                if (ImGui::MenuItem("关于")) {
+                    m_want_show_about_window = true;
+                }
                 ImGui::EndMenu();
             }
             ImGui::EndMenuBar();
@@ -582,41 +599,52 @@ public:
         auto const size = ImVec2(static_cast<float>(rc.right - rc.left), static_cast<float>(rc.bottom - rc.top));
         ImGui::SetNextWindowPos(ImVec2());
         ImGui::SetNextWindowSize(size);
-        if (ImGui::Begin("工作区", nullptr, ImGuiWindowFlags_MenuBar | (ImGuiWindowFlags_NoDecoration ^ ImGuiWindowFlags_NoScrollbar) | ImGuiWindowFlags_NoBackground)) {
+        if (ImGui::Begin("工作区", nullptr, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground)) {
             layoutMainMenu();
             ImGui::Text("打开的文件：%s", m_open_file_path.c_str());
             if (m_opened_texture) {
                 D3D11_TEXTURE2D_DESC texture_info{};
                 m_opened_texture->GetDesc(&texture_info);
                 ImGui::Text("图像尺寸：%u x %u", texture_info.Width, texture_info.Height);
-                bool button_disabled{false};
-                if (m_image_processed) {
-                    button_disabled = true;
-                    ImGui::BeginDisabled();
-                }
-                if (ImGui::Button(m_image_processed ? "已处理透明像素" : "处理透明像素")) {
-                    m_image.doPixelBleeding();
-                    uploadTextureData();
-                    m_image_processed = true;
-                }
-                if (button_disabled) {
-                    ImGui::EndDisabled();
-                }
+
                 ImGui::SameLine();
-                ImGui::Checkbox("预览透明度通道", &m_preview_alpha);
-                ImGui::SameLine();
-                ImGui::Checkbox("临近采样缩放", &m_preview_point_scale);
-                ImGui::SameLine();
+                auto const slider_size = ImGui::GetContentRegionAvail();
+                ImGui::SetNextItemWidth(slider_size.x);
                 ImGui::SliderFloat("预览缩放", &m_preview_scale, 0.01f, 10.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
-                ImGui::GetWindowDrawList()->AddCallback(&applyRenderState, this);
-                ImGui::Image(
-                    reinterpret_cast<ImTextureID>(m_opened_srv.get()),
-                    ImVec2(texture_info.Width * m_preview_scale, texture_info.Height * m_preview_scale)
-                );
-                ImGui::GetWindowDrawList()->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
+
+                auto const container_size = ImGui::GetContentRegionAvail();
+                if (ImGui::BeginChild("##ImageContainer", container_size, ImGuiChildFlags_Borders)) {
+                    auto const image_size = ImGui::GetContentRegionAvail();
+                    ImGui::GetWindowDrawList()->AddCallback(&applyRenderState, this);
+                    ImGui::Image(
+                        reinterpret_cast<ImTextureID>(m_opened_srv.get()),
+                        //ImVec2(texture_info.Width * m_preview_scale, texture_info.Height * m_preview_scale)
+                        image_size
+                    );
+                    ImGui::GetWindowDrawList()->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
+                }
+                ImGui::EndChild();
             }
         }
         ImGui::End();
+    }
+
+    void layoutAboutWindow() {
+        if (m_want_show_about_window) {
+            m_want_show_about_window = false;
+            ImGui::OpenPopup("关于");
+        }
+        auto const center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        if (ImGui::BeginPopupModal("关于", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("%s v%s", APP_NAME, APP_VERSION);
+            ImGui::Text("由璀境石开发，根据 MIT 协议开放源代码");
+            ImGui::Separator();
+            if (ImGui::Button("确认")) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
     }
 
     bool layoutGui() {
@@ -627,6 +655,7 @@ public:
         if (m_show_demo_window) {
             ImGui::ShowDemoWindow(&m_show_demo_window);
         }
+        layoutAboutWindow();
         ImGui::EndFrame();
         ImGui::Render();
         return true;
@@ -689,6 +718,7 @@ private:
     bool m_gui_backend_win32_initialized{false};
     bool m_gui_backend_d3d11_initialized{false};
     bool m_show_demo_window{false};
+    bool m_want_show_about_window{false};
 
     wil::com_ptr<IWICImagingFactory> m_wic_factory;
 
@@ -724,7 +754,7 @@ int main(int, char**) {
         L"png-pixel-bleeding", nullptr
     };
     ::RegisterClassExW(&wc);
-    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"PNG 透明像素处理 v" APP_VERSION, WS_OVERLAPPEDWINDOW, 100, 100, 1280,
+    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"" APP_NAME " v" APP_VERSION, WS_OVERLAPPEDWINDOW, 100, 100, 1280,
                                 800, nullptr, nullptr, wc.hInstance, nullptr);
 
     // Initialize Direct3D
