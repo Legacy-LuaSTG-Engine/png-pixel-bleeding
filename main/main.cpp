@@ -30,6 +30,7 @@
 #include <wil/resource.h>
 #include <wil/com.h>
 #include <wil/result_macros.h>
+#include "win32/WindowTheme.hpp"
 
 #define APP_GIT_URL "https://github.com/Legacy-LuaSTG-Engine/png-pixel-bleeding"
 #define APP_VERSION "0.3.0"
@@ -257,6 +258,7 @@ public:
         }
         THROW_IF_FAILED(g_pd3dDevice->CreateBlendState(&blend_state_info, m_blend_state_one.put()));
 
+        initGuiTheme();
         return initGuiFont();
     }
 
@@ -270,8 +272,11 @@ public:
             }
         }
 
+        return true;
+    }
+
+    void initGuiTheme() {
         ImGuiStyle style;
-        ImGui::StyleColorsDark(&style);
 
         auto const scaling = ImGui_ImplWin32_GetDpiScaleForHwnd(m_win32_window);
         style.ScaleAllSizes(scaling);
@@ -279,8 +284,16 @@ public:
         style.FontScaleDpi = scaling;
 
         ImGui::GetStyle() = style;
+        applyGuiThemeColor();
+    }
 
-        return true;
+    static void applyGuiThemeColor() {
+        if (win32::WindowTheme::ShouldApplicationEnableDarkMode()) {
+            ImGui::StyleColorsDark();
+        }
+        else {
+            ImGui::StyleColorsLight();
+        }
     }
 
     void destroyGui() {
@@ -788,6 +801,7 @@ int main(int, char**) {
     }
 
     // Show the window
+    win32::WindowTheme::UpdateColorMode(hwnd, TRUE);
     ::ShowWindow(hwnd, SW_SHOWDEFAULT);
     ::UpdateWindow(hwnd);
 
@@ -887,6 +901,14 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return true;
 
     switch (msg) {
+    case WM_ACTIVATEAPP:
+        win32::WindowTheme::UpdateColorMode(hWnd, static_cast<BOOL>(wParam));
+        break;
+    case WM_SETTINGCHANGE:
+    case WM_THEMECHANGED:
+        win32::WindowTheme::UpdateColorMode(hWnd, GetForegroundWindow() == hWnd);
+        Application::applyGuiThemeColor();
+        break;
     case WM_SIZE:
         if (wParam == SIZE_MINIMIZED)
             return 0;
@@ -901,7 +923,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         ::PostQuitMessage(0);
         return 0;
     case WM_DPICHANGED:
-        ImGui::GetStyle().FontScaleDpi = static_cast<float>(LOWORD(wParam)) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
+        Application::getInstance().initGuiTheme();
         break;
     case WM_PAINT:
         Application::getInstance().frame();
