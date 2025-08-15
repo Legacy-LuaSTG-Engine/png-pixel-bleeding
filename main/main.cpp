@@ -31,6 +31,7 @@
 #include <wil/com.h>
 #include <wil/result_macros.h>
 
+#define APP_GIT_URL "https://github.com/Legacy-LuaSTG-Engine/png-pixel-bleeding"
 #define APP_VERSION "0.3.0"
 #define APP_NAME    "PNG 透明像素处理"
 
@@ -646,8 +647,22 @@ public:
         ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
         if (ImGui::BeginPopupModal("关于", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::Text("%s v%s", APP_NAME, APP_VERSION);
-            ImGui::Text("由璀境石开发，根据 MIT 协议开放源代码");
+            ImGui::Text("由璀境石开发，");
+            ImGui::SameLine();
+            ImGui::TextLinkOpenURL("根据 MIT 协议开放源代码", APP_GIT_URL);
+
             ImGui::Separator();
+
+            ImGui::Text("使用到的其他开放源代码项目");
+            ImGui::Bullet();
+            ImGui::TextLinkOpenURL("Dear ImGui", "https://github.com/ocornut/imgui");
+            ImGui::Bullet();
+            ImGui::TextLinkOpenURL("Windows Implementation Library", "https://github.com/microsoft/wil");
+            ImGui::Bullet();
+            ImGui::TextLinkOpenURL("DirectXTK", "https://github.com/microsoft/DirectXTK");
+
+            ImGui::Separator();
+
             if (ImGui::Button("确认")) {
                 ImGui::CloseCurrentPopup();
             }
