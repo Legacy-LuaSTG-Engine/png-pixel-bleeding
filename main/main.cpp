@@ -539,7 +539,7 @@ public:
     }
 
     void layoutMainMenu() {
-        if (ImGui::BeginMainMenuBar()) {
+        if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu("文件")) {
                 if (ImGui::MenuItem("打开")) {
                     openFileCommand();
@@ -559,7 +559,7 @@ public:
                 ImGui::MenuItem("演示（Dear ImGui）", nullptr, &m_show_demo_window);
                 ImGui::EndMenu();
             }
-            ImGui::EndMainMenuBar();
+            ImGui::EndMenuBar();
         }
     }
 
@@ -577,7 +577,13 @@ public:
     }
 
     void layoutImageView() {
-        if (ImGui::Begin("工作区")) {
+        RECT rc{};
+        GetClientRect(m_win32_window, &rc);
+        auto const size = ImVec2(static_cast<float>(rc.right - rc.left), static_cast<float>(rc.bottom - rc.top));
+        ImGui::SetNextWindowPos(ImVec2());
+        ImGui::SetNextWindowSize(size);
+        if (ImGui::Begin("工作区", nullptr, ImGuiWindowFlags_MenuBar | (ImGuiWindowFlags_NoDecoration ^ ImGuiWindowFlags_NoScrollbar) | ImGuiWindowFlags_NoBackground)) {
+            layoutMainMenu();
             ImGui::Text("打开的文件：%s", m_open_file_path.c_str());
             if (m_opened_texture) {
                 D3D11_TEXTURE2D_DESC texture_info{};
@@ -617,7 +623,6 @@ public:
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
-        layoutMainMenu();
         layoutImageView();
         if (m_show_demo_window) {
             ImGui::ShowDemoWindow(&m_show_demo_window);
