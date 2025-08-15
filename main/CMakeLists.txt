@@ -6,6 +6,7 @@ target_include_directories(png_pixel_bleed PRIVATE
 )
 target_sources(png_pixel_bleed PRIVATE
         main.cpp
+        resource.rc
         win32/WindowTheme.hpp
         win32/WindowTheme.cpp
         png-pixel-bleeding.manifest

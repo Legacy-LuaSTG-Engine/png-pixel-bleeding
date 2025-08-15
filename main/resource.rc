@@ -1,0 +1,60 @@
+﻿// Microsoft Visual C++ generated resource script.
+//
+#include "winres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+// resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+    FILEVERSION 0,3,0,0
+    PRODUCTVERSION 0,3,0,0
+    FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+    FILEFLAGS 0x1L
+#else
+    FILEFLAGS 0x0L
+#endif
+    FILEOS 0x40004L
+    FILETYPE 0x1L
+    FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "000004b0"
+        BEGIN
+            VALUE "CompanyName", "璀境石"
+            VALUE "FileDescription", "PNG 透明像素处理"
+            VALUE "FileVersion", "0.3.0.0"
+            VALUE "InternalName", "png-pixel-bleed"
+            VALUE "LegalCopyright", "Copyright 2025 璀境石"
+            VALUE "OriginalFilename", "png-pixel-bleed.exe"
+            VALUE "ProductName", "PNG 透明像素处理"
+            VALUE "ProductVersion", "0.3.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0, 1200
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+//IDI_APPICON             ICON                    "app.ico"
+
+#endif    // resources
+/////////////////////////////////////////////////////////////////////////////
