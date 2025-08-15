@@ -1,6 +1,6 @@
 # main
 
-add_executable(png_pixel_bleed)
+add_executable(png_pixel_bleed WIN32)
 target_include_directories(png_pixel_bleed PRIVATE
         .
 )
@@ -17,7 +17,7 @@ target_link_libraries(png_pixel_bleed PRIVATE
         imgui_impl_win32
         imgui_impl_dx11
         DirectXTK
-        RuntimeObject.lib
+        painful-cpp-string-conversion
 )
 
 add_custom_command(TARGET png_pixel_bleed POST_BUILD

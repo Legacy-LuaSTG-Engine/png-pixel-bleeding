@@ -7,3 +7,6 @@
 [submodule "external/DirectXTK"]
 	path = external/DirectXTK
 	url = https://github.com/microsoft/DirectXTK.git
+[submodule "external/painful-cpp-string-conversion"]
+	path = external/painful-cpp-string-conversion
+	url = https://github.com/Demonese/painful-cpp-string-conversion.git

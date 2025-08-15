@@ -79,3 +79,7 @@ target_sources(DirectXTK PRIVATE
         DirectXTK/Inc/WICTextureLoader.h
         DirectXTK/Src/WICTextureLoader.cpp
 )
+
+# painful-cpp-string-conversion
+
+add_subdirectory(painful-cpp-string-conversion)

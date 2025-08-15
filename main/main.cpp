@@ -6,9 +6,12 @@
 // - Documentation        https://dearimgui.com/docs (same as your local docs/ folder).
 // - Introduction, links and more at the top of imgui.cpp
 
+#include <cmath>
 #include <stdexcept>
-#include <string>
+#include <vector>
 #include <ranges>
+#include <algorithm>
+#include "ext/convert.hpp"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -21,7 +24,6 @@
 #define NOIME
 #include <windows.h>
 #include <shobjidl_core.h>
-#include <winrt/base.h>
 #include <wincodec.h>
 #include <dxgi1_6.h>
 #include <d3d11_4.h>
@@ -317,7 +319,7 @@ public:
     void openFileCommand() {
         closeFileCommand();
 
-        auto const file_open_dialog = winrt::create_instance<IFileOpenDialog>(CLSID_FileOpenDialog);
+        auto const file_open_dialog = wil::CoCreateInstance<IFileOpenDialog>(CLSID_FileOpenDialog);
         FILEOPENDIALOGOPTIONS options{};
         THROW_IF_FAILED(file_open_dialog->GetOptions(&options));
         options |= FOS_FORCEFILESYSTEM;
@@ -339,7 +341,7 @@ public:
             PWSTR path{};
             if (SUCCEEDED(THROW_IF_FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))) {
                 m_opened = true;
-                m_open_file_path.assign(winrt::to_string(path));
+                m_open_file_path.assign(ext::convert<std::string>(std::wstring_view(path)));
                 loadImage();
                 CoTaskMemFree(path);
             }
@@ -353,7 +355,7 @@ public:
 
         wil::com_ptr<IWICStream> stream;
         THROW_IF_FAILED(m_wic_factory->CreateStream(stream.put()));
-        auto const file_path = winrt::to_hstring(path);
+        auto const file_path = ext::convert<std::wstring>(path);
         THROW_IF_FAILED(stream->InitializeFromFilename(file_path.c_str(), GENERIC_WRITE));
 
         wil::com_ptr<IWICBitmapEncoder> encoder;
@@ -381,7 +383,7 @@ public:
     }
 
     void saveFileAsCommand() {
-        auto const file_save_dialog = winrt::create_instance<IFileSaveDialog>(CLSID_FileSaveDialog);
+        auto const file_save_dialog = wil::CoCreateInstance<IFileSaveDialog>(CLSID_FileSaveDialog);
         FILEOPENDIALOGOPTIONS options{};
         THROW_IF_FAILED(file_save_dialog->GetOptions(&options));
         options |= FOS_FORCEFILESYSTEM;
@@ -402,7 +404,7 @@ public:
             THROW_IF_FAILED(file_save_dialog->GetResult(item.put()));
             PWSTR path{};
             if (SUCCEEDED(THROW_IF_FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))) {
-                std::string const save_file_path(winrt::to_string(path));
+                std::string const save_file_path(ext::convert<std::string>(std::wstring_view(path)));
                 CoTaskMemFree(path);
                 saveFileAs(save_file_path);
             }
@@ -466,7 +468,7 @@ public:
         // create decoder
 
         wil::com_ptr<IWICBitmapDecoder> decoder;
-        auto const file_path = winrt::to_hstring(m_open_file_path);
+        auto const file_path = ext::convert<std::wstring>(m_open_file_path);
         THROW_IF_FAILED(m_wic_factory->CreateDecoderFromFilename(
             file_path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, decoder.put()
         ));
@@ -780,8 +782,9 @@ public:
 };
 
 // Main code
-int main(int, char**) {
-    winrt::init_apartment();
+//int main(int, char**) {
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
+    [[maybe_unused]] auto const co_uninit = wil::CoInitializeEx();
 
     // Create application window
     //ImGui_ImplWin32_EnableDpiAwareness();
