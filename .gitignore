@@ -4,7 +4,10 @@
 /.vscode
 /.clion
 
-# build
+# Build
 /out
 /cmake-build*
 /build
+
+# Userdata
+imgui.ini
