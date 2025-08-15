@@ -16,3 +16,7 @@ target_link_libraries(png_pixel_bleed PRIVATE
         DirectXTK
         RuntimeObject.lib
 )
+
+add_custom_command(TARGET png_pixel_bleed POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:png_pixel_bleed> ${CMAKE_BINARY_DIR}/$<TARGET_FILE_NAME:png_pixel_bleed>
+)
